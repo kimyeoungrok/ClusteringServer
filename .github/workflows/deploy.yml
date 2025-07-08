@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_KEY }}
           source: "."
-          target: "/home/ec2-user/fastapi"
+          target: "/home/${{ secrets.EC2_USERNAME }}/fastapi"
 
       - name: SSH into EC2 and deploy
         uses: appleboy/ssh-action@master
