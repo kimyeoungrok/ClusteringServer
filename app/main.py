@@ -5,7 +5,6 @@ from typing import List, Dict
 from pydantic import BaseModel, Field
 import numpy as np
 from sklearn.cluster import KMeans
-from collections import OrderedDict
 import pymap3d as pm 
 
 class Place(BaseModel):
@@ -15,6 +14,7 @@ class Place(BaseModel):
     longitude: float = Field(..., ge=-180.0, le=180.0)
 
 class ClusterRequest(BaseModel):
+    group: int = Field(..., ge=1, description="나눌 그룹 수 설정")
     place: List[Place] = Field(..., min_items=1)
 
 def geodetic_to_ecef(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
@@ -53,6 +53,7 @@ def read_root():
 def cluster(req: ClusterRequest = Body(
         ...,
         example={
+            "group" : 5,
             "place": [
     {"name": "가게1", "address": "서울특별시 종로구 세종대로 175", "latitude": 37.572950, "longitude": 126.976968},
     {"name": "가게2", "address": "서울특별시 종로구 율곡로 99", "latitude": 37.579617, "longitude": 126.991902},
@@ -89,15 +90,17 @@ def cluster(req: ClusterRequest = Body(
     )) -> Dict:
     try:
         coords = np.array([[p.latitude, p.longitude] for p in req.place], dtype=float)
-        labels = run_kmeans(coords, k=5)
+        labels = run_kmeans(coords, k=req.group)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     cluster_map: Dict[str, List[Place]] = {}
     for idx, label in enumerate(labels):
-        key = f"clustering{label + 1}"
-        cluster_map.setdefault(key, []).append(req.place[idx])
+        cluster_map.setdefault(label, []).append(req.place[idx])
     
-    sorted_result = OrderedDict(sorted(cluster_map.items(), key=lambda item: item[0]))
+    sorted_result = {
+        f"clustering{label + 1}": cluster_map[label]
+        for label in sorted(cluster_map.keys())
+    }
 
     return {"result": sorted_result}
