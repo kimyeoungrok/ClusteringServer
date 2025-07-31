@@ -3,3 +3,4 @@ uvicorn[standard]
 numpy          
 scikit-learn    
 pymap3d
+k-means-constrained
