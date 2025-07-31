@@ -5,7 +5,8 @@ from typing import List, Dict
 from pydantic import BaseModel, Field
 import numpy as np
 from sklearn.cluster import KMeans
-import pymap3d as pm 
+import pymap3d as pm
+from k_means_constrained import KMeansConstrained
 
 class Place(BaseModel):
     name: str
@@ -16,17 +17,25 @@ class Place(BaseModel):
 class ClusterRequest(BaseModel):
     group: int = Field(..., ge=1, description="나눌 그룹 수 설정")
     place: List[Place] = Field(..., min_items=1)
+    option: int = Field(0, description="옵션 플래그 (기본값: 0, 일반 클러스터링이면 0으로 균등한 클러스터링을 원하면 1로)")
 
 def geodetic_to_ecef(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
     x, y, z = pm.geodetic2ecef(lat_deg, lon_deg, np.zeros_like(lat_deg))
     return np.column_stack([x, y, z])
 
-def run_kmeans(coords_deg: np.ndarray, k: int = 5) -> np.ndarray:
+def run_kmeans(coords_deg: np.ndarray, k: int) -> np.ndarray:
     """coords_deg: (N, 2) lat/lon → k-means labels."""
     if len(coords_deg) < k:
         raise ValueError(f"K({k}) must be ≤ number of points({len(coords_deg)})")
     xyz = geodetic_to_ecef(coords_deg[:, 0], coords_deg[:, 1])
     labels = KMeans(n_clusters=k, random_state=42, n_init="auto").fit_predict(xyz)
+    return labels
+
+def balanced_run_kmeans(coords_deg: np.ndarray, k: int, min_elements: int, max_elements: int) -> np.ndarray:
+    if len(coords_deg) < k:
+        raise ValueError(f"K({k}) must be ≤ number of points({len(coords_deg)})")
+    xyz = geodetic_to_ecef(coords_deg[:, 0], coords_deg[:, 1])
+    labels = KMeansConstrained(n_clusters=k, random_state=42, size_max=max_elements, size_min=min_elements).fit_predict(xyz)
     return labels
 
 
@@ -85,12 +94,21 @@ def cluster(req: ClusterRequest = Body(
     {"name": "가게28", "address": "서울특별시 노원구 동일로 1415", "latitude": 37.654291, "longitude": 127.056162},
     {"name": "가게29", "address": "서울특별시 노원구 한글비석로 8", "latitude": 37.651266, "longitude": 127.061337},
     {"name": "가게30", "address": "서울특별시 도봉구 마들로 576", "latitude": 37.667491, "longitude": 127.042908}
-  ]
+  ],
+            "option" : 0
         }
     )) -> Dict:
     try:
         coords = np.array([[p.latitude, p.longitude] for p in req.place], dtype=float)
-        labels = run_kmeans(coords, k=req.group)
+        if req.option == 0:
+            labels = run_kmeans(coords, k=req.group)
+        else:
+            min_elements = len(req.place) // req.group
+            max_elements = min_elements
+            remainder = len(req.place) % req.group
+            if remainder > 0:
+                max_elements += 1
+            labels = balanced_run_kmeans(coords, k=req.group, min_elements=min_elements, max_elements=max_elements)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
