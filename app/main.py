@@ -43,7 +43,8 @@ app = FastAPI()
 
 origins = [
     "https://store-group-six.vercel.app",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "http://localhost:5174"
 ]
 
 app.add_middleware(
